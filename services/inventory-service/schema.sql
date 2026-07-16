@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id SERIAL PRIMARY KEY,
+  sku VARCHAR(100) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  stock_level INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
