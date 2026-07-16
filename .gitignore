@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Docker
+*.log
+
+# Environment/secrets
+.env
+.env.local
+*.pem
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Flutter
+mobile/**/build/
+mobile/**/.dart_tool/
