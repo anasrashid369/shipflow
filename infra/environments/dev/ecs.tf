@@ -39,7 +39,7 @@ resource "aws_ecs_task_definition" "inventory_service" {
   container_definitions = jsonencode([
     {
       name      = "inventory-service"
-      image     = "${aws_ecr_repository.inventory_service.repository_url}:latest"
+      image     = "localhost:4566/shipflow-inventory-service:latest"
       essential = true
       portMappings = [
         {
