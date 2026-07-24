@@ -13,15 +13,42 @@ const pool = new Pool({
   database: process.env.DB_NAME || "shipflow",
 });
 
-// Health check endpoint
+// Middleware: require a tenant ID on every request (except health check)
+app.use((req, res, next) => {
+  if (req.path === "/health") return next();
+
+  const tenantId = req.header("X-Tenant-Id");
+  if (!tenantId) {
+    return res.status(400).json({ success: false, error: "Missing X-Tenant-Id header" });
+  }
+  req.tenantId = tenantId;
+  next();
+});
+
+// Helper: run a query scoped to the current request's tenant
+async function queryAsTenant(tenantId, queryText, params) {
+  const client = await pool.connect();
+  try {
+    // Postgres doesn't allow parameterized SET, so we validate/escape carefully.
+    // Using set_config() is the safe, parameterized way to do this.
+    await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [tenantId]);
+    const result = await client.query(queryText, params);
+    return result;
+  } finally {
+    client.release();
+  }
+}
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// List all inventory items
 app.get("/inventory", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM inventory_items ORDER BY created_at DESC");
+    const result = await queryAsTenant(
+      req.tenantId,
+      "SELECT * FROM inventory_items ORDER BY created_at DESC"
+    );
     res.json({ success: true, items: result.rows });
   } catch (err) {
     console.error(err);
@@ -29,13 +56,13 @@ app.get("/inventory", async (req, res) => {
   }
 });
 
-// Create a new inventory item
 app.post("/inventory", async (req, res) => {
   try {
     const { sku, name, stock_level } = req.body;
-    const result = await pool.query(
-      "INSERT INTO inventory_items (sku, name, stock_level) VALUES ($1, $2, $3) RETURNING *",
-      [sku, name, stock_level || 0]
+    const result = await queryAsTenant(
+      req.tenantId,
+      "INSERT INTO inventory_items (tenant_id, sku, name, stock_level) VALUES ($1, $2, $3, $4) RETURNING *",
+      [req.tenantId, sku, name, stock_level || 0]
     );
     res.status(201).json({ success: true, item: result.rows[0] });
   } catch (err) {
@@ -44,12 +71,12 @@ app.post("/inventory", async (req, res) => {
   }
 });
 
-// Update stock level
 app.patch("/inventory/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { stock_level } = req.body;
-    const result = await pool.query(
+    const result = await queryAsTenant(
+      req.tenantId,
       "UPDATE inventory_items SET stock_level = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
       [stock_level, id]
     );
@@ -63,11 +90,14 @@ app.patch("/inventory/:id", async (req, res) => {
   }
 });
 
-// Delete an item
 app.delete("/inventory/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query("DELETE FROM inventory_items WHERE id = $1 RETURNING *", [id]);
+    const result = await queryAsTenant(
+      req.tenantId,
+      "DELETE FROM inventory_items WHERE id = $1 RETURNING *",
+      [id]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: "Item not found" });
     }
