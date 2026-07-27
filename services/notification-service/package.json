@@ -1,5 +1,5 @@
 {
-  "name": "inventory-service",
+  "name": "notification-service",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -10,12 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aws-sdk/client-eventbridge": "^3.1095.0",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "pg": "^8.22.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
+    "@aws-sdk/client-sqs": "^3.1095.0",
+    "express": "^5.2.1"
   }
 }

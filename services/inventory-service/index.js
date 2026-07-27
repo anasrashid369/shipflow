@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const { Pool } = require("pg");
+const { EventBridgeClient, PutEventsCommand } = require("@aws-sdk/client-eventbridge");
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,39 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || "postgres",
   database: process.env.DB_NAME || "shipflow",
 });
+
+const eventBridgeClient = new EventBridgeClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  endpoint: process.env.EVENTBRIDGE_ENDPOINT || "http://localhost:4566",
+  credentials: { accessKeyId: "test", secretAccessKey: "test" },
+});
+
+const LOW_STOCK_THRESHOLD = 10;
+
+async function publishLowStockEvent(tenantId, item) {
+  try {
+    await eventBridgeClient.send(
+      new PutEventsCommand({
+        Entries: [
+          {
+            Source: "shipflow.inventory-service",
+            DetailType: "LowStockDetected",
+            Detail: JSON.stringify({
+              tenantId,
+              sku: item.sku,
+              name: item.name,
+              stockLevel: item.stock_level,
+            }),
+            EventBusName: "default",
+          },
+        ],
+      })
+    );
+    console.log(`Published low-stock event for SKU ${item.sku}`);
+  } catch (err) {
+    console.error("Failed to publish low-stock event:", err.message);
+  }
+}
 
 // Middleware: require a tenant ID on every request (except health check)
 app.use((req, res, next) => {
@@ -29,8 +63,6 @@ app.use((req, res, next) => {
 async function queryAsTenant(tenantId, queryText, params) {
   const client = await pool.connect();
   try {
-    // Postgres doesn't allow parameterized SET, so we validate/escape carefully.
-    // Using set_config() is the safe, parameterized way to do this.
     await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [tenantId]);
     const result = await client.query(queryText, params);
     return result;
@@ -83,7 +115,14 @@ app.patch("/inventory/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: "Item not found" });
     }
-    res.json({ success: true, item: result.rows[0] });
+
+    const item = result.rows[0];
+
+    if (item.stock_level < LOW_STOCK_THRESHOLD) {
+      await publishLowStockEvent(req.tenantId, item);
+    }
+
+    res.json({ success: true, item });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: err.message });
