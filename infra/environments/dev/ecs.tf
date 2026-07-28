@@ -53,7 +53,8 @@ resource "aws_ecs_task_definition" "inventory_service" {
         { name = "DB_PORT", value = "5432" },
         { name = "DB_USER", value = "postgres" },
         { name = "DB_PASSWORD", value = "localdevpassword" },
-        { name = "DB_NAME", value = "shipflow" }
+        { name = "DB_NAME", value = "shipflow" },
+        { name = "EVENTBRIDGE_ENDPOINT", value = "http://host.docker.internal:4566" }
       ]
     }
   ])

@@ -43,7 +43,7 @@ async function publishLowStockEvent(tenantId, item) {
     );
     console.log(`Published low-stock event for SKU ${item.sku}`);
   } catch (err) {
-    console.error("Failed to publish low-stock event:", err.message);
+    console.error("Failed to publish low-stock event:", err);
   }
 }
 
