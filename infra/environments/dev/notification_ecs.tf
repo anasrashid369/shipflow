@@ -30,7 +30,7 @@ resource "aws_ecs_task_definition" "notification_service" {
       environment = [
         { name = "QUEUE_URL", value = aws_sqs_queue.low_stock_notifications.url },
         { name = "AWS_REGION", value = "us-east-1" },
-        { name = "SQS_ENDPOINT", value = "http://ministack:4566" }
+        { name = "SQS_ENDPOINT", value = "http://host.docker.internal:4566" }
       ]
     }
   ])
