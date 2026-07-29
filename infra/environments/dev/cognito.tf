@@ -26,6 +26,10 @@ resource "aws_cognito_user_pool" "main" {
   tags = {
     Name = "shipflow-users"
   }
+
+  lifecycle {
+    ignore_changes = [schema, email_configuration]
+  }
 }
 
 resource "aws_cognito_user_pool_client" "main" {
