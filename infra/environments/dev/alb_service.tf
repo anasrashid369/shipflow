@@ -84,8 +84,19 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
+    type = "authenticate-cognito"
+    authenticate_cognito {
+      user_pool_arn       = aws_cognito_user_pool.main.arn
+      user_pool_client_id = aws_cognito_user_pool_client.main.id
+      user_pool_domain    = aws_cognito_user_pool_domain.main.domain
+    }
+    order = 1
+  }
+
+  default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.inventory_service.arn
+    order             = 2
   }
 }
 

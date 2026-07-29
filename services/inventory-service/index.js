@@ -48,12 +48,31 @@ async function publishLowStockEvent(tenantId, item) {
 }
 
 // Middleware: require a tenant ID on every request (except health check)
+function extractTenantFromAlbHeader(req) {
+  const oidcData = req.header("x-amzn-oidc-data");
+  if (!oidcData) return null;
+  try {
+    // ALB's JWT: header.payload.signature (base64url encoded)
+    const payloadBase64 = oidcData.split(".")[1];
+    const payload = JSON.parse(Buffer.from(payloadBase64, "base64").toString("utf8"));
+    return payload["custom:tenant_id"] || null;
+  } catch (err) {
+    console.error("Failed to decode ALB OIDC data:", err.message);
+    return null;
+  }
+}
+
 app.use((req, res, next) => {
   if (req.path === "/health") return next();
 
-  const tenantId = req.header("X-Tenant-Id");
+  // Prefer the ALB-authenticated, Cognito-verified tenant claim.
+  // Fall back to the client-supplied header only for local/direct testing
+  // (bypassing the ALB), never trusted in a real deployment.
+  const tenantFromAlb = extractTenantFromAlbHeader(req);
+  const tenantId = tenantFromAlb || req.header("X-Tenant-Id");
+
   if (!tenantId) {
-    return res.status(400).json({ success: false, error: "Missing X-Tenant-Id header" });
+    return res.status(400).json({ success: false, error: "Missing tenant identity (no ALB auth header or X-Tenant-Id)" });
   }
   req.tenantId = tenantId;
   next();
