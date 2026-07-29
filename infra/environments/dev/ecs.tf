@@ -51,8 +51,8 @@ resource "aws_ecs_task_definition" "inventory_service" {
       environment = [
         { name = "DB_HOST", value = aws_db_instance.main.address },
         { name = "DB_PORT", value = "5432" },
-        { name = "DB_USER", value = "postgres" },
-        { name = "DB_PASSWORD", value = "localdevpassword" },
+        { name = "DB_USER", value = "app_user" },
+        { name = "DB_PASSWORD", value = "app_password" },
         { name = "DB_NAME", value = "shipflow" },
         { name = "EVENTBRIDGE_ENDPOINT", value = "http://host.docker.internal:4566" }
       ]
