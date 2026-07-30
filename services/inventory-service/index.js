@@ -2,9 +2,10 @@ require("dotenv").config();
 const express = require("express");
 const { Pool } = require("pg");
 const { EventBridgeClient, PutEventsCommand } = require("@aws-sdk/client-eventbridge");
-
+const cors = require("cors");
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
