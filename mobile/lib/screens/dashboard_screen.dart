@@ -3,6 +3,7 @@ import 'dart:ui';
 import '../theme/app_theme.dart';
 import '../models/inventory_item.dart';
 import '../services/api_service.dart';
+import 'item_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String tenantId;
@@ -274,8 +275,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
                                     itemCount: _items.length,
                                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                    itemBuilder: (context, index) =>
-                                        _ItemCard(item: _items[index], delay: index * 60),
+                                    itemBuilder: (context, index) => _ItemCard(
+                                      item: _items[index],
+                                      delay: index * 60,
+                                      tenantId: widget.tenantId,
+                                      onReturned: _load,
+                                    ),
                                   ),
                                 ),
                 ),
@@ -342,7 +347,14 @@ class _StatCard extends StatelessWidget {
 class _ItemCard extends StatefulWidget {
   final InventoryItem item;
   final int delay;
-  const _ItemCard({required this.item, required this.delay});
+  final String tenantId;
+  final VoidCallback onReturned;
+  const _ItemCard({
+    required this.item,
+    required this.delay,
+    required this.tenantId,
+    required this.onReturned,
+  });
 
   @override
   State<_ItemCard> createState() => _ItemCardState();
@@ -377,14 +389,25 @@ class _ItemCardState extends State<_ItemCard> with SingleTickerProviderStateMixi
 
     return FadeTransition(
       opacity: _fade,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: lowStock ? AppColors.violet.withOpacity(0.35) : AppColors.border),
-        ),
-        child: Row(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () async {
+          final changed = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ItemDetailScreen(item: item, tenantId: widget.tenantId),
+            ),
+          );
+          if (changed == true) widget.onReturned();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: lowStock ? AppColors.violet.withOpacity(0.35) : AppColors.border),
+          ),
+          child: Row(
           children: [
             Container(
               width: 44,
@@ -417,6 +440,7 @@ class _ItemCardState extends State<_ItemCard> with SingleTickerProviderStateMixi
               ],
             ),
           ],
+          ),
         ),
       ),
     );
