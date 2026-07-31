@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import '../theme/app_theme.dart';
-import 'dashboard_screen.dart';
+import 'home_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -44,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           transitionDuration: const Duration(milliseconds: 500),
           pageBuilder: (_, anim, __) => FadeTransition(
             opacity: anim,
-            child: DashboardScreen(tenantId: _tenantController.text.trim()),
+            child: HomeShell(tenantId: _tenantController.text.trim()),
           ),
         ),
       );
