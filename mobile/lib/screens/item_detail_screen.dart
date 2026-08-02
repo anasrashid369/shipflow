@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/inventory_item.dart';
 import '../services/api_service.dart';
-
+import '../services/order_service.dart';
 class ItemDetailScreen extends StatefulWidget {
   final InventoryItem item;
   final String tenantId;
@@ -16,7 +16,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   final ApiService _api = ApiService();
   late int _stock;
   bool _saving = false;
-
+  bool _ordering = false;
+  final OrderService _orderApi = OrderService();
   @override
   void initState() {
     super.initState();
@@ -35,7 +36,25 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       }
     }
   }
-
+  Future<void> _placeOrder() async {
+    setState(() => _ordering = true);
+    try {
+      await _orderApi.placeOrder(widget.tenantId, widget.item.id, widget.item.sku, 1);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Order placed")),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      setState(() => _ordering = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("$e")),
+        );
+      }
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final lowStock = _stock < 10;
@@ -173,6 +192,32 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                               ),
                             ),
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: _ordering ? null : _placeOrder,
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: accent.withOpacity(0.4)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: _ordering
+                              ? SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.shopping_cart_checkout_rounded, size: 18, color: accent),
+                                    const SizedBox(width: 8),
+                                    Text("Place order (qty 1)", style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                                  ],
+                                ),
                         ),
                       ),
                       const SizedBox(height: 32),
