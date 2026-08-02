@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'dashboard_screen.dart';
 import 'alerts_screen.dart';
+import 'orders_screen.dart';
 
 class HomeShell extends StatefulWidget {
   final String tenantId;
@@ -18,6 +19,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final screens = [
       DashboardScreen(tenantId: widget.tenantId),
+      OrdersScreen(tenantId: widget.tenantId),
       AlertsScreen(tenantId: widget.tenantId),
     ];
 
@@ -30,7 +32,7 @@ class _HomeShellState extends State<HomeShell> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -42,11 +44,18 @@ class _HomeShellState extends State<HomeShell> {
                   onTap: () => setState(() => _index = 0),
                 ),
                 _NavItem(
+                  icon: Icons.receipt_long_rounded,
+                  label: "Orders",
+                  selected: _index == 1,
+                  gradient: AppColors.emeraldGradient,
+                  onTap: () => setState(() => _index = 1),
+                ),
+                _NavItem(
                   icon: Icons.notifications_rounded,
                   label: "Alerts",
-                  selected: _index == 1,
+                  selected: _index == 2,
                   gradient: AppColors.violetGradient,
-                  onTap: () => setState(() => _index = 1),
+                  onTap: () => setState(() => _index = 2),
                 ),
               ],
             ),
@@ -78,7 +87,7 @@ class _NavItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 14),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -88,17 +97,13 @@ class _NavItem extends StatelessWidget {
                 gradient: selected ? gradient : null,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: selected ? Colors.white : AppColors.textTertiary,
-              ),
+              child: Icon(icon, size: 20, color: selected ? Colors.white : AppColors.textTertiary),
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10.5,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: selected ? AppColors.textPrimary : AppColors.textTertiary,
               ),

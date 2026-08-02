@@ -37,3 +37,12 @@ Two non-obvious issues surfaced while building this, both around container netwo
 
 1. **`localhost` inside a container refers to the container itself**, not the host machine. Both `inventory-service` (publishing to EventBridge) and `notification-service` (polling SQS) initially pointed at `localhost:4566`, which silently failed inside their containers. Fixed by using `host.docker.internal:4566` — the standard Docker Desktop mechanism for a container to reach services running on the host.
 2. **MiniStack's ECS simulation does not automatically restart a stopped task** the way real AWS ECS does (which continuously reconciles `runningCount` against `desiredCount`). A `force-new-deployment` call updates metadata but doesn't recreate the container. Workaround: toggle `desired-count` to 0 then back to 1, which reliably triggers a fresh container pull and start.
+## Known limitation: no actual human notification
+
+`notification-service` currently logs low-stock events to the console and processes them off the SQS queue — this proves the event pipeline works end-to-end, but doesn't notify an actual person. A production version would need:
+
+- A `tenant_contacts` table mapping tenants to notification channels (email, Slack webhook, etc.)
+- Email delivery via AWS SES (or SMS/push, reusing the FCM pattern from PulseOps)
+- Contact preferences and delivery confirmation/retry logic
+
+This was scoped out to keep the demonstrated event pipeline stable and fully tested, rather than adding an undertested integration in the final stretch of the build.
