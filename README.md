@@ -1,71 +1,571 @@
 # ShipFlow
 
-A multi-tenant SaaS inventory and order management platform — event-driven microservices on AWS, with row-level tenant isolation, Cognito authentication, and a native mobile client.
+> **A multi-tenant SaaS inventory and order management platform built with Flutter, Node.js microservices, PostgreSQL Row-Level Security, AWS, Docker, Terraform, and event-driven messaging.**
 
-## Demo
+ShipFlow is a production-oriented inventory and order management platform designed for multiple businesses to operate on the same application while maintaining strict tenant-level data isolation.
 
-*(video link here once recorded)*
+The project focuses on engineering challenges beyond basic CRUD applications: **multi-tenancy, database-level isolation, service boundaries, synchronous vs. asynchronous communication, event-driven workflows, authentication, containerization, and infrastructure as code.**
+
+---
 
 ## Architecture
 
-Mobile App (Flutter)
-↓
-Application Load Balancer (Cognito hosted-UI authentication)
-↓
-┌──────────────────────┐ ┌──────────────────────┐
-│ inventory-service │◄───────│ order-service │
-│ (ECS Fargate) │ HTTP │ (ECS Fargate) │
-└──────────┬────────────┘ └──────────┬────────────┘
-│ │
-▼ ▼
-RDS PostgreSQL (Row-Level Security, tenant-isolated)
-• inventory_items table • orders table
+![ShipFlow Architecture](docs/architecture.png)
+
+### High-Level Flow
+
+```text
+Flutter Mobile App
+        │
+        │ HTTPS
+        ▼
+Application Load Balancer
+        │
+        │ Cognito Authentication
+        ▼
+┌─────────────────────────────────────────────────┐
+│                 ECS / Fargate                   │
+│                                                 │
+│  ┌─────────────────┐      HTTP      ┌─────────┐ │
+│  │ inventory-      │◄───────────────│ order-  │ │
+│  │ service         │                │ service │ │
+│  └────────┬────────┘                └────┬────┘ │
+│           │                              │      │
+└───────────┼──────────────────────────────┼──────┘
+            │                              │
+            ▼                              ▼
+       PostgreSQL                    PostgreSQL
+        + RLS                           + RLS
+            │
+            │ LowStockDetected
+            ▼
+      Amazon EventBridge
+            │
+            ▼
+          Amazon SQS
+            │
+            ▼
+   notification-service
+```
+
+ShipFlow deliberately uses **two different communication patterns**:
+
+* **Synchronous HTTP** for order → inventory stock reservation, because the user needs an immediate success/failure response.
+* **Asynchronous EventBridge + SQS** for low-stock notifications, so notification processing remains decoupled from inventory operations.
+
+---
+
+# Core Features
+
+### Inventory
+
+* Create, read, update, and delete inventory items
+* SKU and stock-level tracking
+* Tenant-scoped inventory
+* Configurable low-stock threshold
+* Automatic low-stock event generation
+
+### Orders
+
+* Create orders from available inventory
+* Check stock availability before placing an order
+* Synchronously reserve/decrement inventory
+* Tenant-scoped order history
+
+### Low-Stock Alerts
+
+When inventory falls below a tenant's configured threshold:
+
+```text
+Inventory stock update
+        ↓
+Threshold evaluation
+        ↓
+LowStockDetected event
+        ↓
+EventBridge
+        ↓
+SQS
+        ↓
+notification-service
+        ↓
+Alert processing
+```
+
+### Multi-Tenancy
+
+Tenant isolation is enforced at the PostgreSQL database layer using **Row-Level Security (RLS)**.
+
+Instead of relying exclusively on application-level filtering, each request establishes a tenant context and PostgreSQL policies restrict access to rows belonging to that tenant.
+
+This creates a second line of defense against accidental cross-tenant data access.
+
+---
+
+# Technology Stack
+
+| Layer                | Technology                                 |
+| -------------------- | ------------------------------------------ |
+| Mobile               | Flutter                                    |
+| Backend              | Node.js / Express                          |
+| Architecture         | Microservices                              |
+| Compute              | AWS ECS / Fargate                          |
+| Load Balancing       | Application Load Balancer                  |
+| Authentication       | Amazon Cognito + ALB-native authentication |
+| Database             | PostgreSQL / Amazon RDS                    |
+| Data Isolation       | PostgreSQL Row-Level Security              |
+| Events               | Amazon EventBridge                         |
+| Queuing              | Amazon SQS                                 |
+| Containers           | Docker                                     |
+| Infrastructure       | Terraform                                  |
+| Local AWS Validation | MiniStack                                  |
+| Messaging Pattern    | Event-driven + synchronous HTTP            |
+
+---
+
+# Microservices
+
+ShipFlow is divided into three independently deployable services.
+
+## `inventory-service`
+
+Responsible for:
+
+* Inventory CRUD
+* Tenant-scoped database access
+* Stock-level updates
+* Per-tenant low-stock thresholds
+* Publishing `LowStockDetected` events
+
+Example event:
+
+```json
+{
+  "tenantId": "tenant-a",
+  "sku": "A-001",
+  "name": "Tenant A Widget",
+  "stockLevel": 5
+}
+```
+
+---
+
+## `order-service`
+
+Responsible for:
+
+* Order creation
+* Order retrieval
+* Stock availability validation
+* Synchronous communication with `inventory-service`
+* Stock reservation/decrement
+
+The order workflow intentionally uses synchronous communication:
+
+```text
+Client
+  ↓
+order-service
+  ↓ HTTP
+inventory-service
+  ↓
+Check stock
+  ↓
+Reserve stock
+  ↓
+Create order
+```
+
+The immediate response matters here — the client needs to know whether the order could actually be placed.
+
+---
+
+## `notification-service`
+
+Responsible for:
+
+* Consuming low-stock messages from SQS
+* Processing low-stock events
+* Logging/handling alerts
+
+It does **not** need to know that `inventory-service` exists.
+
+Instead:
+
+```text
+inventory-service
+      ↓
+ EventBridge
+      ↓
+     SQS
+      ↓
+notification-service
+```
+
+This keeps notification processing decoupled from the inventory service.
+
+---
+
+# Multi-Tenant Data Isolation
+
+One of the central design goals of ShipFlow is preventing Tenant A from accessing Tenant B's data.
+
+The application establishes the tenant context for each request:
+
+```text
+Authenticated Request
+        ↓
+Tenant Identity
+        ↓
+Application Tenant Context
+        ↓
+PostgreSQL Session
+        ↓
+RLS Policy
+        ↓
+Only matching tenant rows
+```
+
+The database enforces the boundary using PostgreSQL Row-Level Security.
+
+Conceptually:
+
+```sql
+CREATE POLICY tenant_isolation_policy
+ON inventory_items
+USING (
+    tenant_id = current_setting(
+        'app.current_tenant_id',
+        true
+    )
+);
+```
+
+The same tenant-isolation approach is applied to the relevant transactional data.
+
+### Why RLS?
+
+Application-level filtering alone creates a dangerous failure mode:
+
+```text
+SELECT * FROM inventory_items;
+```
+
+A buggy repository or missing `WHERE tenant_id = ...` could potentially expose another tenant's data.
+
+With RLS enabled, the database itself becomes an enforcement boundary.
+
+See [`docs/multi-tenancy.md`](docs/multi-tenancy.md) for the detailed design and the two RLS-related security issues discovered and fixed during development.
+
+---
+
+# Authentication
+
+ShipFlow currently uses:
+
+```text
+Flutter
+   ↓
+Application Load Balancer
+   ↓
+Amazon Cognito
+   ↓
+Authenticated request
+   ↓
+Backend services
+```
+
+The architecture uses **ALB-native Cognito authentication** rather than adding API Gateway and a custom Lambda authorizer.
+
+This keeps the current architecture centered around the ALB as the primary entry point.
+
+---
+
+# Event-Driven Architecture
+
+Low-stock alerts use an asynchronous architecture:
+
+```text
+inventory-service
+       │
+       │ LowStockDetected
+       ▼
+ EventBridge
+       │
+       ▼
+      SQS
+       │
+       ▼
+notification-service
+```
+
+### Why EventBridge + SQS?
+
+The inventory service doesn't need to know how notifications are processed.
+
+That means the notification path can fail or become temporarily unavailable without requiring inventory operations to synchronously wait for it.
+
+This creates a clean separation between:
+
+**Core transactional workflow**
+
+and
+
+**Secondary asynchronous processing**
+
+See [`docs/event-driven-architecture.md`](docs/event-driven-architecture.md).
+
+---
+
+# Why These Architecture Decisions?
+
+## ECS Fargate instead of Lambda
+
+ShipFlow's services are long-running containerized applications that maintain database connection pools and represent continuously running service workloads.
+
+This differs from the bursty, short-lived alert-processing workload used in PulseOps.
+
+The choice demonstrates that compute architecture should follow workload characteristics rather than defaulting to one technology.
+
+---
+
+## PostgreSQL RLS instead of application-only filtering
+
+Multi-tenancy is enforced at the database layer.
+
+The application establishes tenant context, while PostgreSQL policies enforce which rows can be accessed.
+
+This provides a stronger isolation boundary than relying entirely on developers remembering to add tenant filters to every query.
+
+---
+
+## EventBridge + SQS instead of direct notification calls
+
+Inventory processing doesn't directly depend on the notification service.
+
+Instead:
+
+```text
+inventory-service
+       ↓
+ EventBridge
+       ↓
+     SQS
+       ↓
+notification-service
+```
+
+This decouples the services and allows notification processing to happen asynchronously.
+
+---
+
+## Synchronous HTTP for stock reservation
+
+Order creation is different.
+
+When a customer places an order, ShipFlow needs an immediate answer:
+
+> Is there enough inventory to place the order?
+
+Therefore:
+
+```text
+order-service
+      ↓ HTTP
+inventory-service
+      ↓
+stock validation
+      ↓
+stock decrement
+```
+
+This is intentionally synchronous because the consistency requirement is different from the low-stock notification workflow.
+
+---
+
+# Infrastructure & DevOps
+
+ShipFlow's infrastructure is managed with Terraform.
+
+The services are containerized using Docker and designed for deployment on ECS/Fargate.
+
+Terraform configuration is validated against **MiniStack**, allowing infrastructure development and testing without continuously incurring real AWS costs.
+
+### Infrastructure tooling
+
+* Terraform
+* Docker
+* ECS/Fargate
+* Application Load Balancer
+* RDS PostgreSQL
+* EventBridge
+* SQS
+* Cognito
+
+---
+
+# Project Structure
+
+```text
+shipflow/
 │
-▼ (on low stock)
-EventBridge → SQS queue
-▼
-notification-service (ECS Fargate, polls queue, logs alerts)
+├── mobile/
+│   └── lib/
+│       └── features/
+│           ├── inventory/
+│           ├── orders/
+│           ├── alerts/
+│           └── tenant_admin/
+│
+├── services/
+│   ├── inventory-service/
+│   │   ├── index.js
+│   │   ├── Dockerfile
+│   │   └── schema.sql
+│   │
+│   ├── order-service/
+│   │   ├── index.js
+│   │   ├── Dockerfile
+│   │   └── schema.sql
+│   │
+│   └── notification-service/
+│       ├── src/
+│       └── Dockerfile
+│
+├── infra/
+│   └── terraform/
+│
+├── docs/
+│   ├── multi-tenancy.md
+│   ├── event-driven-architecture.md
+│   └── cognito-auth.md
+│
+└── README.md
+```
 
+---
 
-## Tech Stack
+# Known Limitations
 
-**Backend**: Node.js/Express — three independently deployed microservices on AWS ECS Fargate
-**Database**: PostgreSQL (RDS) with Row-Level Security for tenant isolation
-**Auth**: AWS Cognito, ALB-native authentication (hosted UI, no API Gateway)
-**Events**: EventBridge + SQS for decoupled inter-service communication
-**Infra**: Terraform, validated against MiniStack (local AWS emulator) to avoid real cloud cost during development
-**Mobile**: Flutter — custom duotone (emerald/violet) design system, 3-tab navigation (Inventory, Orders, Alerts)
+ShipFlow intentionally documents what is **not yet production-complete**.
 
-## The Three Services
+## Notification delivery
 
-- **`inventory-service`** — CRUD for inventory items, publishes `LowStockDetected` events to EventBridge when stock drops below threshold
-- **`order-service`** — creates orders, synchronously reserves stock by calling `inventory-service`'s update endpoint
-- **`notification-service`** — polls the SQS queue fed by EventBridge, processes low-stock alerts
+`notification-service` currently processes and logs low-stock alerts but does not yet send real email/SMS notifications.
 
-## Why These Design Choices
+Potential production implementation:
 
-- **ECS Fargate over Lambda**: these are long-running, connection-pooling services — a different workload shape than PulseOps' bursty alert logic, justifying a different compute model.
-- **ALB-native Cognito over API Gateway + Lambda authorizer**: the architecture is ALB-fronted from the start; adding API Gateway on top would be a redundant second entry point.
-- **Row-Level Security over application-layer filtering**: tenant isolation enforced by the database itself. See `docs/multi-tenancy.md` for the full design, including two real RLS bypass gotchas found and fixed during development.
-- **EventBridge + SQS over direct HTTP calls (for alerts)**: `inventory-service` has no knowledge that `notification-service` exists — a failure in notification processing can't cascade into inventory operations.
-- **Synchronous HTTP over event-driven (for order → stock reservation)**: order placement needs an immediate success/failure response to the user ("insufficient stock" must be known before confirming the order) — a deliberately different pattern than the alert pipeline, chosen because the two flows have different consistency requirements.
+```text
+notification-service
+       ↓
+Amazon SES / FCM
+       ↓
+Tenant notification
+```
 
-## Known Limitations (documented, not hidden)
+See [`docs/event-driven-architecture.md`](docs/event-driven-architecture.md).
 
-- **No real human notification**: `notification-service` logs alerts and processes the event pipeline correctly, but doesn't yet send email/SMS. See `docs/event-driven-architecture.md` for the scoped-out design (tenant contacts table, SES integration).
-- **Order → inventory reservation is not transactional**: a failure after stock decrements but before the order record is written has no rollback. A production version would need a saga pattern or outbox table.
-- **Validated against MiniStack, not real AWS**: built under a zero-cost constraint (see `docs/` for reasoning) — Terraform is correct and applies cleanly, but hasn't been proven against a real AWS account.
+---
 
-## What I'd Add Next
+## Order / Inventory Transaction Boundary
 
-- Real email/SMS delivery for alerts (SES or FCM, reusing the PulseOps pattern)
-- Transactional/saga-based order-inventory coordination
-- Automated integration tests (testcontainers-based, real Postgres in CI)
-- Rate limiting per tenant at the ALB layer
-- ALB fronting for order-service (currently direct port access only)
+Order creation and inventory reservation currently span two services.
 
-## Documentation
+The workflow is not a distributed transaction.
 
-- [`docs/multi-tenancy.md`](docs/multi-tenancy.md) — RLS design, two real security gaps found and fixed
-- [`docs/event-driven-architecture.md`](docs/event-driven-architecture.md) — EventBridge/SQS design, debugging notes, and the notification gap
-- [`docs/cognito-auth.md`](docs/cognito-auth.md) — Auth architecture and tenant resolution
+A failure after inventory is decremented but before the order is persisted could leave the system in an inconsistent state.
+
+A production implementation could introduce:
+
+* Saga pattern
+* Transactional outbox
+* Idempotent operations
+* Compensation events
+
+---
+
+## Cloud Validation
+
+Infrastructure has been validated against MiniStack rather than continuously deployed to real AWS infrastructure.
+
+This was an intentional zero-cost development constraint.
+
+Terraform configuration is therefore treated as infrastructure-as-code that is validated locally, rather than claiming that the complete production infrastructure has been battle-tested in a live AWS environment.
+
+---
+
+## Current Deployment Gap
+
+The architecture is designed around an ALB entry point, but the current `order-service` implementation is not yet fully fronted through the ALB in the same way as the inventory path.
+
+A production follow-up would route the order service through the same authenticated entry architecture.
+
+---
+
+# What I'd Build Next
+
+1. **Real notification delivery**
+
+   * Amazon SES / FCM
+   * Tenant notification preferences
+
+2. **Distributed transaction reliability**
+
+   * Saga-based order workflow
+   * Transactional outbox
+   * Idempotency
+
+3. **Automated integration testing**
+
+   * Testcontainers
+   * Real PostgreSQL integration tests
+   * Event contract tests
+
+4. **Tenant-aware rate limiting**
+
+   * Per-tenant request limits
+
+5. **Complete ALB routing**
+
+   * Route `order-service` through the authenticated entry point
+
+6. **Production observability**
+
+   * Distributed tracing
+   * Centralized structured logging
+   * Service-level metrics and alarms
+
+---
+
+# Documentation
+
+* [`docs/multi-tenancy.md`](docs/multi-tenancy.md) — PostgreSQL RLS design, tenant isolation strategy, and security gaps discovered and fixed.
+* [`docs/event-driven-architecture.md`](docs/event-driven-architecture.md) — EventBridge + SQS architecture, low-stock event flow, notification processing, and known limitations.
+* [`docs/cognito-auth.md`](docs/cognito-auth.md) — Cognito authentication architecture and tenant identity resolution.
+
+---
+
+# Engineering Takeaways
+
+ShipFlow was built to explore several problems that don't appear in a basic CRUD application:
+
+* How do you isolate multiple tenants sharing the same database?
+* Where should tenant isolation actually be enforced?
+* When should microservices communicate synchronously?
+* When should communication become asynchronous?
+* How do you prevent secondary workflows from blocking core transactions?
+* What happens when a distributed workflow partially fails?
+* How should infrastructure be represented as code?
+* How do you make architecture decisions based on workload rather than technology trends?
+
+The most important lesson:
+
+> **Architecture is less about using as many technologies as possible and more about choosing the right boundary, consistency model, and failure behavior for each part of the system.**
+
+---
+
+# Project Status
+
+**Active development**
+
+ShipFlow is the flagship project in my portfolio and is being developed incrementally toward a more production-grade multi-tenant SaaS architecture.
