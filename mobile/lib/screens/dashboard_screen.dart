@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 import '../models/inventory_item.dart';
 import '../services/api_service.dart';
 import 'item_detail_screen.dart';
-
+import 'settings_screen.dart';
 class DashboardScreen extends StatefulWidget {
   final String tenantId;
   const DashboardScreen({super.key, required this.tenantId});
@@ -207,18 +207,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ],
                       ),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: _load,
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
+                      Row(
+                        children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => SettingsScreen(tenantId: widget.tenantId),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: const Icon(Icons.settings_outlined, color: AppColors.textSecondary, size: 20),
+                            ),
                           ),
-                          child: const Icon(Icons.refresh_rounded, color: AppColors.textSecondary, size: 20),
-                        ),
+                          const SizedBox(width: 10),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: _load,
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: const Icon(Icons.refresh_rounded, color: AppColors.textSecondary, size: 20),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

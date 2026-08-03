@@ -21,7 +21,19 @@ const eventBridgeClient = new EventBridgeClient({
   credentials: { accessKeyId: "test", secretAccessKey: "test" },
 });
 
-const LOW_STOCK_THRESHOLD = 10;
+async function getThreshold(tenantId) {
+  try {
+    const result = await queryAsTenant(
+      tenantId,
+      "SELECT low_stock_threshold FROM tenant_settings WHERE tenant_id = $1",
+      [tenantId]
+    );
+    return result.rows[0]?.low_stock_threshold ?? 10;
+  } catch (err) {
+    console.error("Failed to fetch threshold, using default:", err.message);
+    return 10;
+  }
+}
 
 async function publishLowStockEvent(tenantId, item) {
   try {
@@ -138,7 +150,8 @@ app.patch("/inventory/:id", async (req, res) => {
 
     const item = result.rows[0];
 
-    if (item.stock_level < LOW_STOCK_THRESHOLD) {
+    const threshold = await getThreshold(req.tenantId);
+    if (item.stock_level < threshold) {
       await publishLowStockEvent(req.tenantId, item);
     }
 
@@ -166,7 +179,34 @@ app.delete("/inventory/:id", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+app.get("/settings/threshold", async (req, res) => {
+  try {
+    const threshold = await getThreshold(req.tenantId);
+    res.json({ success: true, threshold });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
+app.patch("/settings/threshold", async (req, res) => {
+  try {
+    const { threshold } = req.body;
+    if (typeof threshold !== "number" || threshold < 0) {
+      return res.status(400).json({ success: false, error: "Invalid threshold" });
+    }
+    await queryAsTenant(
+       req.tenantId,
+       `INSERT INTO tenant_settings (tenant_id, low_stock_threshold)
+       VALUES ($1, $2)
+       ON CONFLICT (tenant_id)
+       DO UPDATE SET low_stock_threshold = $2`,
+  [req.tenantId, threshold]
+);
+    res.json({ success: true, threshold });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`inventory-service listening on port ${PORT}`);

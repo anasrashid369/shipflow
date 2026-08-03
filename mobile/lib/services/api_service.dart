@@ -43,4 +43,28 @@ class ApiService {
     }
     throw Exception("Failed to update item");
   }
+  Future<int> fetchThreshold(String tenantId) async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/settings/threshold"),
+      headers: {"X-Tenant-Id": tenantId},
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['threshold'] ?? 10;
+    }
+    throw Exception("Failed to load threshold");
+  }
+
+  Future<int> updateThreshold(String tenantId, int threshold) async {
+    final response = await http.patch(
+      Uri.parse("$baseUrl/settings/threshold"),
+      headers: {"Content-Type": "application/json", "X-Tenant-Id": tenantId},
+      body: jsonEncode({"threshold": threshold}),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['threshold'];
+    }
+    throw Exception("Failed to update threshold");
+  }
 }
